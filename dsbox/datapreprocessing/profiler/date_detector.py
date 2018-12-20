@@ -120,7 +120,7 @@ class DateFeaturizer:
 
     def sample_dataframe(self, sampled_df):
         date_cols = []
-        print("date detector \n")
+        print("date detect_numbers \n")
         #loops all the column names
         for column_label in self.df.columns.values:
             if self._parse_column(sampled_df, column_label) is not None:

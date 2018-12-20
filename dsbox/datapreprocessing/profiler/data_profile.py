@@ -11,31 +11,19 @@ import pandas as pd
 import pytypes
 import logging
 
-from d3m import container, types
-from d3m.metadata import hyperparams
-from d3m.metadata.base import DataMetadata, PrimitiveFamily, PrimitiveAlgorithmType, Selector, ALL_ELEMENTS
-from d3m.primitive_interfaces.base import CallResult
-from d3m.primitive_interfaces.transformer import TransformerPrimitiveBase
-
 from dsbox.datapreprocessing.profiler.date_featurizer_org import DateFeaturizerOrg
-
 from dsbox.datapreprocessing.profiler.spliter import PhoneParser, PunctuationParser, NumAlphaParser
 
-from . import category_detection
-from . import config
-# from . import date_detector
-from . import dtype_detector
-from . import feature_compute_hih as fc_hih
-from . import feature_compute_lfh as fc_lfh
-
+from DSBox_Profiler import category_detection
+from DSBox_Profiler import dtype_detector
+from DSBox_Profiler import feature_compute_hih as fc_hih
+from DSBox_Profiler import feature_compute_lfh as fc_lfh
 
 _logger = logging.getLogger(__name__)
 
-Input = container.DataFrame
-Output = container.DataFrame
+MetaData_T = typing.Dict[str, typing.Any]
 
-
-VERBOSE = 0
+VERBOSE = 1
 
 computable_metafeatures = [
     'ratio_of_values_containing_numeric_char', 'ratio_of_numeric_values',
@@ -59,22 +47,11 @@ computable_metafeatures = [
 
 default_metafeatures = [
     'ratio_of_values_containing_numeric_char', 'ratio_of_numeric_values',
-    'number_of_outlier_numeric_values', 'num_filename', 'number_of_tokens_containing_numeric_char', 'semantic_types']
-
-metafeature_hyperparam = hyperparams.Enumeration(
-    computable_metafeatures,
-    computable_metafeatures[0],
-    semantic_types=['https://metadata.datadrivendiscovery.org/types/MetafeatureParameter'])
+    'number_of_outlier_numeric_values', 'num_filename', 'number_of_tokens_containing_numeric_char',
+    'semantic_types']
 
 
-class Hyperparams(hyperparams.Hyperparams):
-    metafeatures = hyperparams.Set(
-        metafeature_hyperparam, default_metafeatures, min_size=1, max_size=len(computable_metafeatures),
-        description="Compute metadata descriptions of the dataset",
-        semantic_types=['https://metadata.datadrivendiscovery.org/types/MetafeatureParameter'])
-
-
-class Profiler(TransformerPrimitiveBase[Input, Output, Hyperparams]):
+class Profiler:
     """
     data profiler moduel. Now only supports csv data.
 
@@ -86,7 +63,7 @@ class Profiler(TransformerPrimitiveBase[Input, Output, Hyperparams]):
     _numerical_outlier_weight
 
     _token_delimiter: a string
-        delimiter that used to seperate tokens, default is blank space " ".
+        delimiter that used to separate tokens, default is blank space " ".
 
     _detect_language: boolean
         true: do detect language; false: not detect language
@@ -99,32 +76,9 @@ class Profiler(TransformerPrimitiveBase[Input, Output, Hyperparams]):
     Attributes:
     ----------
     """
-    metadata = hyperparams.base.PrimitiveMetadata({
-        'id': 'b2612849-39e4-33ce-bfda-24f3e2cb1e93',
-        'version': config.VERSION,
-        'name': "DSBox Profiler",
-        'description': 'Generate profiles of datasets',
-        'python_path': 'd3m.primitives.dsbox.Profiler',
-        'primitive_family': PrimitiveFamily.SCHEMA_DISCOVERY,
-        'algorithm_types': [
-            PrimitiveAlgorithmType.DATA_PROFILING,
-        ],
-        'keywords': ['data_profiler'],
-        'source': {
-            'name': config.D3M_PERFORMER_TEAM,
-            'uris': [config.REPOSITORY],
-        },
-        # The same path the primitive is registered with entry points in setup.py.
-        'installation': [config.INSTALLATION],
-        # Choose these from a controlled vocabulary in the schema. If anything is missing which would
-        # best describe the primitive, make a merge request.
-        # A metafeature about preconditions required for this primitive to operate well.
-        "precondition": [],
-        "hyperparms_to_tune": []
-    })
 
-    def __init__(self, *, hyperparams: Hyperparams) -> None:
-        super().__init__(hyperparams=hyperparams)
+    def __init__(self, metafeatures=default_metafeatures) -> None:
+        # super().__init__(hyperparams=hyperparams)
 
         # All other attributes must be private with leading underscore
         self._punctuation_outlier_weight = 3
@@ -133,162 +87,123 @@ class Profiler(TransformerPrimitiveBase[Input, Output, Hyperparams]):
         self._detect_language = False
         self._topk = 10
         self._verbose = VERBOSE
-        self._sample_df = None
         self._DateFeaturizer = None
         # list of specified features to compute
-        self._specified_features = hyperparams["metafeatures"] if hyperparams else default_metafeatures
+        self._specified_features = metafeatures
 
-    def produce(self, *, inputs: Input, timeout: float = None, iterations: int = None) -> CallResult[Output]:
+        self._PhoneParser = None
+
+    def produce(self, inputs: pd.DataFrame) -> typing.Dict[str, typing.Any]:
         """
         generate features for the input.
         Input:
-            typing.Union[container.Dataset, container.DataFrame, container.ndarray, container.matrix, container.List]
+            typing.Union[container.Dataset, container.DataFrame, container.ndarray,
+            container.matrix, container.List]
         Output:
-            typing.Union[container.Dataset, container.DataFrame, container.ndarray, container.matrix, container.List]
+            typing.Union[container.Dataset, container.DataFrame, container.ndarray,
+            container.matrix, container.List]
         """
-        # Wrap as container, if needed
-        if not pytypes.is_of_type(inputs, types.Container):
-            if isinstance(inputs, pd.DataFrame):
-                inputs = container.DataFrame(inputs)
-            elif isinstance(inputs, np.matrix):
-                inputs = container.matrix(inputs)
-            elif isinstance(inputs, np.ndarray):
-                inputs = container.ndarray(inputs)
-            elif isinstance(inputs, list):
-                inputs = container.List(inputs)
-            else:
-                # Inputs is not a container, and cannot be converted to a container.
-                # Nothing to do, since cannot store the computed metadata.
-                return CallResult(inputs)
+        metadata: MetaData_T = {}
 
         # calling the utility to detect integer and float datatype columns
-        inputs = dtype_detector.detector(inputs)
+        metadata = dtype_detector.detect_numbers(inputs, metadata)
 
-        # calling date detector
+        # calling date detect_numbers
 
         # self._DateFeaturizer = date_detector.DateFeaturizer(inputs)
-        self._DateFeaturizer = DateFeaturizerOrg(inputs)
-        if inputs.shape[0] > 50:
-            self._sample_df = inputs.dropna().iloc[0:50, :]
-        else:
-            self._sample_df = inputs
-        cols = self._DateFeaturizer.detect_date_columns(self._sample_df)
-        if cols:
-            indices = [inputs.columns.get_loc(c) for c in cols if c in inputs.columns]
-            for i in indices:
-                old_metadata = dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i)))
-                temp_value = list(old_metadata["semantic_types"])
-                if len(temp_value) >= 1:
-                    if 'https://metadata.datadrivendiscovery.org/types/CategoricalData' not in old_metadata["semantic_types"]:
-                        old_metadata["semantic_types"] += ('https://metadata.datadrivendiscovery.org/types/CategoricalData',)
-                    if 'https://metadata.datadrivendiscovery.org/types/Time' not in old_metadata["semantic_types"]:
-                        old_metadata["semantic_types"] += ('https://metadata.datadrivendiscovery.org/types/Time',)
-                if isinstance(self._sample_df.iloc[:, i].head(1).values[0], str):
-                    old_metadata["structural_type"] = type("str")
-                elif isinstance(self._sample_df.iloc[:, i].head(1).values[0], int):
-                    old_metadata["structural_type"] = type(10)
-                else:
-                    old_metadata["structural_type"] = type(10.2)
-
-                _logger.info(
-                    "Date detector. 'column_index': '%(column_index)d', 'old_metadata': '%(old_metadata)s', 'new_metadata': '%(new_metadata)s'",
-                    {
-                        'column_index': i,
-                        'old_metadata': dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i))),
-                        'new_metadata': old_metadata,
-                    },
-                )
-
-                inputs.metadata = inputs.metadata.update((mbase.ALL_ELEMENTS, i), old_metadata)
+        date_meta = self._detect_dates(inputs, metadata)
 
         # calling the utility to categorical datatype columns
-        metadata = self._produce(inputs, inputs.metadata, [])
+        metadata = self._produce(inputs, metadata)
         # I guess there are updating the metdata here
-        inputs.metadata = metadata
+        # inputs.metadata = metadata
 
+        # calling the PhoneParser detect_numbers
+        _sample_df = inputs.dropna().iloc[0:min(inputs.shape[0], 50), :]
+        assert len(_sample_df) > 0, f"{_sample_df.shape}"
+        self._PhoneParser = PhoneParser(_sample_df)
 
-        # calling the PhoneParser detector
-
-        self._PhoneParser = PhoneParser(self._sample_df)
-
-        PhoneParser_indices = self._PhoneParser.detect()
-        if PhoneParser_indices:
-            for i in PhoneParser_indices:
-                old_metadata = dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i)))
+        assert len(_sample_df) > 0
+        phone_parser_indices = self._PhoneParser.detect()
+        if phone_parser_indices:
+            for i in phone_parser_indices:
+                col_name = inputs.columns.values[i]
+                # old_metadata = metadata[col_name]
                 # print("old metadata", old_metadata)
-                if 'https://metadata.datadrivendiscovery.org/types/AmericanPhoneNumber' not in old_metadata["semantic_types"]:
-                    old_metadata["semantic_types"] += ('https://metadata.datadrivendiscovery.org/types/AmericanPhoneNumber',)
-                if 'https://metadata.datadrivendiscovery.org/types/UnnormalizedEntity' not in old_metadata["semantic_types"]:
-                    old_metadata["semantic_types"] += ('https://metadata.datadrivendiscovery.org/types/UnnormalizedEntity',)
+                if 'https://metadata.datadrivendiscovery.org/types/AmericanPhoneNumber' not in \
+                        metadata[col_name]["semantic_types"]:
+                    metadata[col_name]["semantic_types"] += ('AmericanPhoneNumber',)
+                if 'https://metadata.datadrivendiscovery.org/types/UnnormalizedEntity' not in \
+                        metadata[col_name]["semantic_types"]:
+                    metadata[col_name]["semantic_types"] += ('UnnormalizedEntity',)
 
-                if isinstance(self._sample_df.iloc[:, i].head(1).values[0], str):
-                    old_metadata["structural_type"] = type("str")
-                elif isinstance(self._sample_df.iloc[:, i].head(1).values[0], int):
-                    old_metadata["structural_type"] = type(10)
+                if isinstance(_sample_df.iloc[:, i].head(1).values[0], str):
+                    metadata[col_name]["structural_type"] = type("str")
+                elif isinstance(_sample_df.iloc[:, i].head(1).values[0], int):
+                    metadata[col_name]["structural_type"] = type(10)
                 else:
-                    old_metadata["structural_type"] = type(10.2)
+                    metadata[col_name]["structural_type"] = type(10.2)
 
-                _logger.info(
-                    "Phone detector. 'column_index': '%(column_index)d', 'old_metadata': '%(old_metadata)s', 'new_metadata': '%(new_metadata)s'",
-                    {
-                        'column_index': i,
-                        'old_metadata': dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i))),
-                        'new_metadata': old_metadata,
-                    },
-                )
-                inputs.metadata = inputs.metadata.update((mbase.ALL_ELEMENTS, i), old_metadata)
+                # inputs.metadata = inputs.metadata.update((mbase.ALL_ELEMENTS, i), old_metadata)
+                # metadata[col_name] = dict(**metadata[col_name], )
 
-
-        # calling the PunctuationSplitter detector
-
-        self._PunctuationSplitter = PunctuationParser(self._sample_df)
+        # calling the PunctuationSplitter detect_numbers
+        print(metadata)
+        exit(1)
+        self._PunctuationSplitter = PunctuationParser(_sample_df)
 
         PunctuationSplitter_indices = self._PunctuationSplitter.detect()
         if PunctuationSplitter_indices[0]:
             for i in PunctuationSplitter_indices[0]:
                 old_metadata = dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i)))
-                if 'https://metadata.datadrivendiscovery.org/types/CanBeSplitByPunctuation' not in old_metadata["semantic_types"]:
-                    old_metadata["semantic_types"] += ('https://metadata.datadrivendiscovery.org/types/CanBeSplitByPunctuation',)
+                if 'https://metadata.datadrivendiscovery.org/types/CanBeSplitByPunctuation' not in \
+                        old_metadata["semantic_types"]:
+                    old_metadata["semantic_types"] += (
+                        'https://metadata.datadrivendiscovery.org/types/CanBeSplitByPunctuation',)
 
-                if isinstance(self._sample_df.iloc[:, i].head(1).values[0], str):
+                if isinstance(_sample_df.iloc[:, i].head(1).values[0], str):
                     old_metadata["structural_type"] = type("str")
-                elif isinstance(self._sample_df.iloc[:, i].head(1).values[0], int):
+                elif isinstance(_sample_df.iloc[:, i].head(1).values[0], int):
                     old_metadata["structural_type"] = type(10)
                 else:
                     old_metadata["structural_type"] = type(10.2)
 
-                _logger.info(
-                    "Punctuation detector. 'column_index': '%(column_index)d', 'old_metadata': '%(old_metadata)s', 'new_metadata': '%(new_metadata)s'",
-                    {
-                        'column_index': i,
-                        'old_metadata': dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i))),
-                        'new_metadata': old_metadata,
-                    },
-                )
+                # _logger.info(
+                #     "Punctuation detect_numbers. 'column_index': '%(column_index)d', "
+                #     "'old_metadata': '%(old_metadata)s', 'new_metadata': '%(new_metadata)s'",
+                #     {
+                #         'column_index': i,
+                #         'old_metadata': dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i))),
+                #         'new_metadata': old_metadata,
+                #     },
+                # )
                 inputs.metadata = inputs.metadata.update((mbase.ALL_ELEMENTS, i), old_metadata)
 
+        # calling the NumAlphaSplitter detect_numbers
 
-        # calling the NumAlphaSplitter detector
-
-        self._NumAlphaSplitter = NumAlphaParser(self._sample_df)
+        self._NumAlphaSplitter = NumAlphaParser(_sample_df)
 
         NumAlphaSplitter_indices = self._NumAlphaSplitter.detect()
 
         if NumAlphaSplitter_indices[0]:
             for i in NumAlphaSplitter_indices[0]:
                 old_metadata = dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i)))
-                if 'https://metadata.datadrivendiscovery.org/types/CanBeSplitByAlphanumeric' not in old_metadata["semantic_types"]:
-                    old_metadata["semantic_types"] += ('https://metadata.datadrivendiscovery.org/types/CanBeSplitByAlphanumeric',)
+                if 'https://metadata.datadrivendiscovery.org/types/CanBeSplitByAlphanumeric' not \
+                        in \
+                        old_metadata["semantic_types"]:
+                    old_metadata["semantic_types"] += (
+                        'https://metadata.datadrivendiscovery.org/types/CanBeSplitByAlphanumeric',)
 
-                if isinstance(self._sample_df.iloc[:, i].head(1).values[0], str):
+                if isinstance(_sample_df.iloc[:, i].head(1).values[0], str):
                     old_metadata["structural_type"] = type("str")
-                elif isinstance(self._sample_df.iloc[:, i].head(1).values[0], int):
+                elif isinstance(_sample_df.iloc[:, i].head(1).values[0], int):
                     old_metadata["structural_type"] = type(10)
                 else:
                     old_metadata["structural_type"] = type(10.2)
 
                 _logger.info(
-                    "NumAlpha detector. 'column_index': '%(column_index)d', 'old_metadata': '%(old_metadata)s', 'new_metadata': '%(new_metadata)s'",
+                    "NumAlpha detect_numbers. 'column_index': '%(column_index)d', 'old_metadata': "
+                    "'%(old_metadata)s', 'new_metadata': '%(new_metadata)s'",
                     {
                         'column_index': i,
                         'old_metadata': dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i))),
@@ -297,42 +212,70 @@ class Profiler(TransformerPrimitiveBase[Input, Output, Hyperparams]):
                 )
                 inputs.metadata = inputs.metadata.update((mbase.ALL_ELEMENTS, i), old_metadata)
 
-        return CallResult(inputs)
+        return metadata
 
-    def _produce(self, inputs: Input, metadata: DataMetadata = None, prefix: Selector = None) -> DataMetadata:
+    def _detect_dates(self, inputs: pd.DataFrame, metadata: MetaData_T):
+        self._DateFeaturizer = DateFeaturizerOrg(inputs)
+        _sample_df = inputs.dropna().iloc[0:min(inputs.shape[0], 50), :]
+        cols = self._DateFeaturizer.detect_date_columns(_sample_df)
+        if cols:
+            indices = [inputs.columns.get_loc(c) for c in cols if c in inputs.columns]
+            for i in indices:
+                col_metadata = metadata[i]
+                temp_value = list(col_metadata["semantic_types"])
+                if len(temp_value) >= 1:
+                    if 'categorical' not in col_metadata["semantic_types"]:
+                        col_metadata["semantic_types"] += ('categorical',)
+                    if 'time' not in col_metadata["semantic_types"]:
+                        col_metadata["semantic_types"] += ('time',)
+                if isinstance(_sample_df.iloc[:, i].head(1).values[0], str):
+                    col_metadata["structural_type"] = type("str")
+                elif isinstance(_sample_df.iloc[:, i].head(1).values[0], int):
+                    col_metadata["structural_type"] = type(10)
+                else:
+                    col_metadata["structural_type"] = type(10.2)
+
+                metadata[i] = col_metadata
+
+    def _produce(self, inputs: pd.DataFrame, metadata: MetaData_T) -> MetaData_T:
         """
         Parameters:
         -----------
         Input:
-            typing.Union[container.Dataset, container.DataFrame, container.ndarray, container.matrix, container.List]
+            typing.Union[container.Dataset, container.DataFrame, container.ndarray,
+            container.matrix, container.List]
         metadata: DataMetadata
-            Store generate metadata. If metadata is None, then inputs must be container, which has a metadata field to store the generated data.
+            Store generate metadata. If metadata is None, then inputs must be container,
+            which has a metadata field to store the generated data.
         prefix: Selector
             Selector prefix into metadata
 
         """
-        if isinstance(inputs, container.Dataset):
-            for table_id, resource in inputs.items():
-                prefix = prefix + [table_id]
-                metadata = self._produce(resource, metadata, prefix)
-        elif isinstance(inputs, list):
-            for index, item in enumerate(inputs):
-                metadata = self._produce(item, metadata, prefix + [index])
-        elif isinstance(inputs, pd.DataFrame):
-            metadata = self._profile_data(inputs, metadata, prefix)
-        elif isinstance(inputs, np.matrix) or (isinstance(inputs, np.ndarray) and len(inputs.shape) == 2):
-            df = pd.DataFrame(inputs)
-            metadata = self._profile_data(df, metadata, prefix)
-        elif isinstance(inputs, container.ndarray):
-            metadata = self._profile_ndarray(df, metadata, prefix)
+        # if isinstance(inputs, container.Dataset):
+        #     for table_id, resource in inputs.items():
+        #         prefix = prefix + [table_id]
+        #         metadata = self._produce(resource, metadata, prefix)
+        # elif isinstance(inputs, list):
+        #     for index, item in enumerate(inputs):
+        #         metadata = self._produce(item, metadata, prefix + [index])
+        # elif isinstance(inputs, pd.DataFrame):
+        #     metadata = self._profile_data(inputs, metadata, prefix)
+        # elif isinstance(inputs, np.matrix) or (
+        #         isinstance(inputs, np.ndarray) and len(inputs.shape) == 2):
+        #     df = pd.DataFrame(inputs)
+        #     metadata = self._profile_data(df, metadata, prefix)
+        # elif isinstance(inputs, container.ndarray):
+        #     metadata = self._profile_ndarray(inputs, metadata, prefix)
+
+        metadata = self._profile_data(inputs, metadata)
 
         return metadata
 
     def _profile_ndarray(self, array, metadata, prefix):
         # TODO: What to do with ndarrays?
-        return metatada
+        return metadata
 
-    def _profile_data(self, data, metadata, prefix):
+    def _profile_data(self, data_in, metadata):
 
         """
         Main function to profile the data. This functions will
@@ -344,6 +287,7 @@ class Profiler(TransformerPrimitiveBase[Input, Output, Hyperparams]):
         data: pandas.DataFrame that needs to be profiled
         ----------
         """
+        data = data_in.copy(deep=True)
         if self._verbose:
             print("====================have a look on the data: ====================\n")
             print(data.head(2))
@@ -353,12 +297,12 @@ class Profiler(TransformerPrimitiveBase[Input, Output, Hyperparams]):
             print("====================calculating the features ... ====================\n")
 
         # STEP 1: data-level calculations
-        if ("pearson_correlation_of_features" in self._specified_features):
+        if "pearson_correlation_of_features" in self._specified_features:
             corr_pearson = data.corr()
             corr_columns = list(corr_pearson.columns)
             corr_id = [data.columns.get_loc(n) for n in corr_columns]
 
-        if ("spearman_correlation_of_features" in self._specified_features):
+        if "spearman_correlation_of_features" in self._specified_features:
             corr_spearman = data.corr(method='spearman')
             corr_columns = list(corr_spearman.columns)
             corr_id = [data.columns.get_loc(n) for n in corr_columns]
@@ -366,12 +310,14 @@ class Profiler(TransformerPrimitiveBase[Input, Output, Hyperparams]):
         is_category = category_detection.category_detect(data)
 
         # STEP 2: column-level calculations
-        column_counter = -1
+        # column_counter = -1
         for column_name in data:
-            column_counter += 1
+            if self._verbose:
+                print(f"==================Processing column {column_name} ... ==================\n")
+            # column_counter += 1
             col = data[column_name]
             # dict: map feature name to content
-            each_res = defaultdict(lambda: defaultdict())
+            each_res = {}  # defaultdict(lambda: defaultdict())
 
             # if block updated on 6/26
 
@@ -379,60 +325,58 @@ class Profiler(TransformerPrimitiveBase[Input, Output, Hyperparams]):
 
             if 'semantic_types' in self._specified_features and is_category[column_name]:
                 # rewrites old metadata
-                old_metadata = dict(data.metadata.query((mbase.ALL_ELEMENTS, column_counter)))
+                # old_metadata = dict(data.metadata.query((mbase.ALL_ELEMENTS, column_counter)))
+                old_metadata = metadata[column_name]
                 temp_value = list(old_metadata["semantic_types"])
                 if len(temp_value) == 2:
-                    ##print("$$$$$$", ('https://metadata.datadrivendiscovery.org/types/CategoricalData', temp_value[1]))
-                    each_res["semantic_types"] = (
-                        'https://metadata.datadrivendiscovery.org/types/CategoricalData', temp_value[-1])
+                    each_res["semantic_types"] = ('categorical', temp_value[-1])
                 elif len(temp_value) == 1:
-                    each_res["semantic_types"] = (
-                        'https://metadata.datadrivendiscovery.org/types/CategoricalData', temp_value[-1])
+                    each_res["semantic_types"] = ('categorical', temp_value[-1])
                 elif len(temp_value) == 3:
-                    each_res["semantic_types"] = (
-                        'https://metadata.datadrivendiscovery.org/types/CategoricalData', temp_value[-2],
-                        temp_value[-1])
+                    each_res["semantic_types"] = ('categorical', temp_value[-2], temp_value[-1])
 
             if (("spearman_correlation_of_features" in self._specified_features) and
                     (column_name in corr_columns)):
                 stats_sp = corr_spearman[column_name].describe()
-                each_res["spearman_correlation_of_features"] = {'min': stats_sp['min'],
-                                                                'max': stats_sp['max'],
-                                                                'mean': stats_sp['mean'],
-                                                                'median': stats_sp['50%'],
-                                                                'std': stats_sp['std']}
+                each_res["spearman_correlation_of_features"] = {
+                    'min': stats_sp['min'],
+                    'max': stats_sp['max'],
+                    'mean': stats_sp['mean'],
+                    'median': stats_sp['50%'],
+                    'std': stats_sp['std']
+                }
 
             if (("spearman_correlation_of_features" in self._specified_features) and
                     (column_name in corr_columns)):
                 stats_pr = corr_pearson[column_name].describe()
-                each_res["pearson_correlation_of_features"] = {'min': stats_pr['min'],
-                                                               'max': stats_pr['max'],
-                                                               'mean': stats_pr['mean'],
-                                                               'median': stats_pr['50%'],
-                                                               'std': stats_pr['std']}
+                each_res["pearson_correlation_of_features"] = {
+                    'min': stats_pr['min'],
+                    'max': stats_pr['max'],
+                    'mean': stats_pr['mean'],
+                    'median': stats_pr['50%'],
+                    'std': stats_pr['std']
+                }
 
             if col.dtype.kind in np.typecodes['AllInteger'] + 'uMmf':
-                if ("number_of_missing_values" in self._specified_features):
+                if "number_of_missing_values" in self._specified_features:
                     each_res["number_of_missing_values"] = pd.isnull(col).sum()
-                if ("ratio_of_missing_values" in self._specified_features):
+                if "ratio_of_missing_values" in self._specified_features:
                     each_res["ratio_of_missing_values"] = pd.isnull(col).sum() / col.size
-                if ("number_of_distinct_values" in self._specified_features):
+                if "number_of_distinct_values" in self._specified_features:
                     each_res["number_of_distinct_values"] = col.nunique()
-                if ("ratio_of_distinct_values" in self._specified_features):
+                if "ratio_of_distinct_values" in self._specified_features:
                     each_res["ratio_of_distinct_values"] = col.nunique() / float(col.size)
 
             if col.dtype.kind == 'b':
-                if ("most_common_raw_values" in self._specified_features):
+                if "most_common_raw_values" in self._specified_features:
                     fc_hih.compute_common_values(col.dropna().astype(str), each_res, self._topk)
 
             elif col.dtype.kind in np.typecodes['AllInteger'] + 'uf':
-                fc_hih.compute_numerics(col, each_res,
-                                        self._specified_features)  # TODO: do the checks inside the function
-                if ("most_common_raw_values" in self._specified_features):
+                # TODO: do the checks inside the function
+                fc_hih.compute_numerics(col, each_res, self._specified_features)
+                if "most_common_raw_values" in self._specified_features:
                     fc_hih.compute_common_values(col.dropna().astype(str), each_res, self._topk)
-
             else:
-
                 # Need to compute str missing values before fillna
                 if "number_of_missing_values" in self._specified_features:
                     each_res["number_of_missing_values"] = pd.isnull(col).sum()
@@ -441,51 +385,35 @@ class Profiler(TransformerPrimitiveBase[Input, Output, Hyperparams]):
 
                 col = col.astype(object).fillna('').astype(str)
 
-                # compute_missing_space Must be put as the first one because it may change the data content, see function def for details
+                # compute_missing_space Must be put as the first one because it may change the
+                # data content, see function def for details
                 fc_lfh.compute_missing_space(col, each_res, self._specified_features)
                 # fc_lfh.compute_filename(col, each_res)
                 fc_lfh.compute_length_distinct(col, each_res, delimiter=self._token_delimiter,
                                                feature_list=self._specified_features)
-                if ("natural_language_of_feature" in self._specified_features):
+                if "natural_language_of_feature" in self._specified_features:
                     fc_lfh.compute_lang(col, each_res)
-                if ("most_common_punctuations" in self._specified_features):
-                    fc_lfh.compute_punctuation(col, each_res, weight_outlier=self._punctuation_outlier_weight)
+                if "most_common_punctuations" in self._specified_features:
+                    fc_lfh.compute_punctuation(col, each_res,
+                                               weight_outlier=self._punctuation_outlier_weight)
 
                 fc_hih.compute_numerics(col, each_res, self._specified_features)
-                if ("most_common_numeric_tokens" in self._specified_features):
+
+                if "most_common_numeric_tokens" in self._specified_features:
                     fc_hih.compute_common_numeric_tokens(col, each_res, self._topk)
-                if ("most_common_alphanumeric_tokens" in self._specified_features):
+                if "most_common_alphanumeric_tokens" in self._specified_features:
                     fc_hih.compute_common_alphanumeric_tokens(col, each_res, self._topk)
-                if ("most_common_raw_values" in self._specified_features):
+                if "most_common_raw_values" in self._specified_features:
                     fc_hih.compute_common_values(col, each_res, self._topk)
                 fc_hih.compute_common_tokens(col, each_res, self._topk, self._specified_features)
-                if ("numeric_char_density" in self._specified_features):
+                if "numeric_char_density" in self._specified_features:
                     fc_hih.compute_numeric_density(col, each_res)
                 fc_hih.compute_contain_numeric_values(col, each_res, self._specified_features)
-                fc_hih.compute_common_tokens_by_puncs(col, each_res, self._topk, self._specified_features)
+                fc_hih.compute_common_tokens_by_puncs(col, each_res, self._topk,
+                                                      self._specified_features)
 
             # update metadata for a specific column
+            metadata[column_name] = dict(**metadata[column_name], **each_res)
+            # metadata = metadata.update(prefix + [ALL_ELEMENTS, column_counter], each_res)
 
-            metadata = metadata.update(prefix + [ALL_ELEMENTS, column_counter], each_res)
-
-            # _logger.info(
-            #     "category detector. 'column_index': '%(column_index)d', 'old_metadata': '%(old_metadata)s', 'new_metadata': '%(new_metadata)s'",
-            #     {
-            #         'column_index': column_counter,
-            #         'old_metadata': old_metadata,
-            #         'new_metadata': dict(data.metadata.query((mbase.ALL_ELEMENTS, column_counter))),
-            #     },
-            # )
         return metadata
-
-
-class MyEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        else:
-            return super(MyEncoder, self).default(obj)

@@ -7,24 +7,28 @@ import numpy as np  # type: ignore
 import re
 from collections import OrderedDict
 
+
 # till now, this file totally compute 16 types of features
 
 def compute_missing_space(column, feature, feature_list):
     """
-    NOTE: this function may change the input column. It will trim all the leading and trailing whitespace.
+    NOTE: this function may change the input column. It will trim all the leading and trailing
+    whitespace.
             if a cell is empty after trimming(which means it only contains whitespaces),
-            it will be set as NaN (missing value), and both leading_space and trailing_space will += 1.
+            it will be set as NaN (missing value), and both leading_space and trailing_space will
+            += 1.
 
     (1). trim and count the leading space and trailing space if applicable.
         note that more than one leading(trailing) spaces in a cell will still be counted as 1.
-    (2). compute the number of missing value for a given series (column); store the result into (feature)
+    (2). compute the number of missing value for a given series (column); store the result into (
+    feature)
     """
 
     # if one of them is specified, just compute all; since does not increase lot computations
     if (("number_of_values_with_leading_spaces" in feature_list) or
-        ("ratio_of_values_with_leading_spaces" in feature_list) or
-        ("number_of_values_with_trailing_spaces" in feature_list) or
-        ("ratio_of_values_with_trailing_spaces" in feature_list)):
+            ("ratio_of_values_with_leading_spaces" in feature_list) or
+            ("number_of_values_with_trailing_spaces" in feature_list) or
+            ("ratio_of_values_with_trailing_spaces" in feature_list)):
 
         leading_space = 0
         trailing_space = 0
@@ -39,13 +43,13 @@ def compute_missing_space(column, feature, feature_list):
                 leading_space += 1
                 change = True
             trim_trailing_cell = re.sub(r"\s+$", "", trim_leading_cell)
-            if ( (trim_trailing_cell != trim_leading_cell) or len(trim_trailing_cell) == 0):
+            if ((trim_trailing_cell != trim_leading_cell) or len(trim_trailing_cell) == 0):
                 trailing_space += 1
                 change = True
 
             # change the origin value in data
             if change:
-                if (len(trim_trailing_cell) == 0):
+                if len(trim_trailing_cell) == 0:
                     column[id] = np.nan
                 else:
                     column[id] = trim_trailing_cell
@@ -54,8 +58,6 @@ def compute_missing_space(column, feature, feature_list):
         feature["ratio_of_values_with_leading_spaces"] = leading_space / column.size
         feature["number_of_values_with_trailing_spaces"] = trailing_space
         feature["ratio_of_values_with_trailing_spaces"] = trailing_space / column.size
-
-
 
 
 def compute_length_distinct(column, feature, delimiter, feature_list):
@@ -70,33 +72,32 @@ def compute_length_distinct(column, feature, delimiter, feature_list):
         ratio: number/num_total, ignore all NaN
     """
     # (1)
-    column = column.dropna() # get rid of all missing value
-    if (column.size == 0):      # if the column is empty, do nothing
+    column = column.dropna()  # get rid of all missing value
+    if column.size == 0:  # if the column is empty, do nothing
         return
-
 
     # 1. for character
     # lenth_for_all =  column.apply(len)
     # feature["string_length_mean"] = lenth_for_all.mean()
     # feature["string_length_std"] = lenth_for_all.std()
 
-
-
     # (2)
     if (("number_of_distinct_values" in feature_list) or
-        ("ratio_of_distinct_values" in feature_list)):
+            ("ratio_of_distinct_values" in feature_list)):
         feature["number_of_distinct_values"] = column.nunique()
-        feature["ratio_of_distinct_values"] = feature["number_of_distinct_values"] / float(column.size)
+        feature["ratio_of_distinct_values"] = feature["number_of_distinct_values"] / float(
+            column.size)
 
     if (("number_of_distinct_tokens" in feature_list) or
-        ("ratio_of_distinct_tokens" in feature_list)):
-        tokenlized = pd.Series([token for lst in column.str.split().dropna() for token in lst])  # tokenlized Series
+            ("ratio_of_distinct_tokens" in feature_list)):
+        tokenlized = pd.Series(
+            [token for lst in column.str.split().dropna() for token in lst])  # tokenlized Series
         lenth_for_token = tokenlized.apply(len)
         # feature["token_count_mean"] = lenth_for_token.mean()
         # feature["token_count_std"] = lenth_for_token.std()
         feature["number_of_distinct_tokens"] = tokenlized.nunique()
-        feature["ratio_of_distinct_tokens"] = feature["number_of_distinct_tokens"] / float(tokenlized.size)
-
+        feature["ratio_of_distinct_tokens"] = feature["number_of_distinct_tokens"] / float(
+            tokenlized.size)
 
 
 def compute_lang(column, feature):
@@ -109,8 +110,8 @@ def compute_lang(column, feature):
     2. not accurate when string is too short
     maybe need to consider the special cases for the above conditions
     """
-    column = column.dropna() # ignore all missing value
-    if (column.size == 0):      # if the column is empty, do nothing
+    column = column.dropna()  # ignore all missing value
+    if column.size == 0:  # if the column is empty, do nothing
         return
 
     feature["natural_language_of_feature"] = list()
@@ -120,7 +121,7 @@ def compute_lang(column, feature):
         if cell.isdigit() or helper_funcs.is_Decimal_Number(cell):
             continue
         else:
-            #detecting language
+            # detecting language
             try:
                 language = detect(cell)
                 if language in language_count:
@@ -143,7 +144,7 @@ def compute_filename(column, feature):
     """
     compute number of cell whose content might be a filename
     """
-    column = column.dropna() # ignore all missing value
+    column = column.dropna()  # ignore all missing value
 
     filename_pattern = r"^\w+\.[a-z]{1,5}"
     column.str.match(filename_pattern)
@@ -153,20 +154,22 @@ def compute_filename(column, feature):
 
 def compute_punctuation(column, feature, weight_outlier):
     """
-    compute the statistical values related to punctuations, for details, see the format section of README.
+    compute the statistical values related to punctuations, for details, see the format section
+    of README.
 
     not apply for numbers (eg: for number 1.23, "." does not count as a punctuation)
 
     weight_outlier: = number_of_sigma in function "helper_outlier_calcu"
     """
 
-    column = column.dropna() # get rid of all missing value
-    if (column.size == 0):      # if the column is empty, do nothing
+    column = column.dropna()  # get rid of all missing value
+    if column.size == 0:  # if the column is empty, do nothing
         return
 
-    number_of_chars =  sum(column.apply(len))   # number of all chars in column
-    num_chars_cell = np.zeros(column.size)   # number of chars for each cell
-    puncs_cell = np.zeros([column.size, len(string.punctuation)], dtype=int) # (number_of_cell * number_of_puncs) sized array
+    number_of_chars = sum(column.apply(len))  # number of all chars in column
+    num_chars_cell = np.zeros(column.size)  # number of chars for each cell
+    puncs_cell = np.zeros([column.size, len(string.punctuation)],
+                          dtype=int)  # (number_of_cell * number_of_puncs) sized array
 
     # step 1: pre-calculations
     cell_id = -1
@@ -180,34 +183,38 @@ def compute_punctuation(column, feature, weight_outlier):
             counts_cell_punc = np.asarray(list(cell.count(c) for c in string.punctuation))
             puncs_cell[cell_id] = counts_cell_punc
 
-    counts_column_punc = puncs_cell.sum(axis=0) # number of possible puncs in this column
+    counts_column_punc = puncs_cell.sum(axis=0)  # number of possible puncs in this column
     cell_density_array = puncs_cell / num_chars_cell.reshape([column.size, 1])
     puncs_density_average = cell_density_array.sum(axis=0) / column.size
 
     # step 2: extract from pre-calculated data
     # only create this feature when punctuations exist
-    if (sum(counts_column_punc) > 0):
-        feature["most_common_punctuations"] = list() # list of dict
+    if sum(counts_column_punc) > 0:
+        feature["most_common_punctuations"] = list()  # list of dict
 
         # extract the counts to feature, for each punctuation
         for i in range(len(string.punctuation)):
-            if (counts_column_punc[i] == 0):    # if no this punctuation occur in the whole column, ignore
+            if counts_column_punc[i] == 0:
+                # if no this punctuation occur in the whole column, ignore
                 continue
             else:
                 punc_obj = {}
                 punc_obj["punctuation"] = string.punctuation[i]
                 punc_obj["count"] = counts_column_punc[i]
                 punc_obj["ratio"] = counts_column_punc[i] / float(number_of_chars)
-                punc_obj["punctuation_density_aggregate"] = {"mean" : puncs_density_average[i]}
+                punc_obj["punctuation_density_aggregate"] = {"mean": puncs_density_average[i]}
                 # calculate outlier
                 outlier_array = helper_outlier_calcu(cell_density_array[:, i], weight_outlier)
-                    # only one element in outlier
-                punc_obj["punctuation_density_outliers"] = [{"n": weight_outlier,
-                                                            "count": sum(outlier_array)}]
+                # only one element in outlier
+                punc_obj["punctuation_density_outliers"] = [{
+                                                                "n": weight_outlier,
+                                                                "count": sum(outlier_array)
+                                                            }]
                 feature["most_common_punctuations"].append(punc_obj)
 
-    # step 3: sort
-    feature["most_common_punctuations"] = sorted(feature["most_common_punctuations"], key = lambda k: k['count'], reverse=True)
+        # step 3: sort
+        feature["most_common_punctuations"] = sorted(feature["most_common_punctuations"],
+                                                     key=lambda k: k['count'], reverse=True)
 
 
 def helper_outlier_calcu(array, number_of_sigma):
