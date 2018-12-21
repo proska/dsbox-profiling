@@ -136,7 +136,7 @@ def compute_lang(column, feature):
     for lang in languages_ordered:
         lang_obj = {}
         lang_obj['name'] = lang
-        lang_obj['count'] = language_count[lang]
+        lang_obj['ratio'] = language_count[lang]/len(column)
         feature["natural_language_of_feature"].append(lang_obj)
 
 
