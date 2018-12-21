@@ -14,8 +14,8 @@ def isfloat(value):
         return False
 
 
-def detect_numbers(inputs: pd.DataFrame, metadata: MetaData_T):
-
+def detect_numbers(inputs_in: pd.DataFrame, metadata: MetaData_T):
+    inputs = inputs_in.copy(deep=True)
     # _logger = logging.getLogger(__name__)
     for col, name in enumerate(inputs.columns.values):
         if name not in metadata:

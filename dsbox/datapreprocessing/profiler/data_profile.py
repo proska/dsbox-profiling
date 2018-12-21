@@ -14,10 +14,10 @@ import logging
 from dsbox.datapreprocessing.profiler.date_featurizer_org import DateFeaturizerOrg
 from dsbox.datapreprocessing.profiler.spliter import PhoneParser, PunctuationParser, NumAlphaParser
 
-from DSBox_Profiler import category_detection
-from DSBox_Profiler import dtype_detector
-from DSBox_Profiler import feature_compute_hih as fc_hih
-from DSBox_Profiler import feature_compute_lfh as fc_lfh
+from . import category_detection
+from . import dtype_detector
+from . import feature_compute_hih as fc_hih
+from . import feature_compute_lfh as fc_lfh
 
 _logger = logging.getLogger(__name__)
 
@@ -93,6 +93,12 @@ class Profiler:
 
         self._PhoneParser = None
 
+    def vectorize_metadata(self, metadata: MetaData_T) -> pd.DataFrame:
+        col_names = list(metadata.keys())
+        res = pd.DataFrame(None, index=col_names)
+        for col in metadata:
+            pass
+
     def produce(self, inputs: pd.DataFrame) -> typing.Dict[str, typing.Any]:
         """
         generate features for the input.
@@ -109,8 +115,6 @@ class Profiler:
         metadata = dtype_detector.detect_numbers(inputs, metadata)
 
         # calling date detect_numbers
-
-        # self._DateFeaturizer = date_detector.DateFeaturizer(inputs)
         date_meta = self._detect_dates(inputs, metadata)
 
         # calling the utility to categorical datatype columns
@@ -119,8 +123,7 @@ class Profiler:
         # inputs.metadata = metadata
 
         # calling the PhoneParser detect_numbers
-        _sample_df = inputs.dropna().iloc[0:min(inputs.shape[0], 50), :]
-        assert len(_sample_df) > 0, f"{_sample_df.shape}"
+        _sample_df = self.sampling_df(inputs)
         self._PhoneParser = PhoneParser(_sample_df)
 
         assert len(_sample_df) > 0
@@ -148,8 +151,6 @@ class Profiler:
                 # metadata[col_name] = dict(**metadata[col_name], )
 
         # calling the PunctuationSplitter detect_numbers
-        print(metadata)
-        exit(1)
         self._PunctuationSplitter = PunctuationParser(_sample_df)
 
         PunctuationSplitter_indices = self._PunctuationSplitter.detect()
@@ -201,18 +202,24 @@ class Profiler:
                 else:
                     old_metadata["structural_type"] = type(10.2)
 
-                _logger.info(
-                    "NumAlpha detect_numbers. 'column_index': '%(column_index)d', 'old_metadata': "
-                    "'%(old_metadata)s', 'new_metadata': '%(new_metadata)s'",
-                    {
-                        'column_index': i,
-                        'old_metadata': dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i))),
-                        'new_metadata': old_metadata,
-                    },
-                )
+                # _logger.info(
+                #     "NumAlpha detect_numbers. 'column_index': '%(column_index)d', 'old_metadata': "
+                #     "'%(old_metadata)s', 'new_metadata': '%(new_metadata)s'",
+                #     {
+                #         'column_index': i,
+                #         'old_metadata': dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i))),
+                #         'new_metadata': old_metadata,
+                #     },
+                # )
                 inputs.metadata = inputs.metadata.update((mbase.ALL_ELEMENTS, i), old_metadata)
 
         return metadata
+
+    def sampling_df(self, inputs):
+        # cleaned_df = inputs.dropna()
+        _sample_df = inputs.iloc[0:min(inputs.shape[0], 50), :]
+        assert len(_sample_df) > 0, f"{_sample_df.shape}"
+        return _sample_df
 
     def _detect_dates(self, inputs: pd.DataFrame, metadata: MetaData_T):
         self._DateFeaturizer = DateFeaturizerOrg(inputs)

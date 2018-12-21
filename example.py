@@ -26,7 +26,7 @@ result.metadata.pretty_print()
 
 # 2. DataFrame as input
 import pandas as pd
-# data = pd.read_csv("/Users/luofanghao/work/USC_lab/isi-II/work/DSBox_project/end2end_sys/dsbox-profiling/dsbox/datapreprocessing/profiler/unit_tests/sources/testData.csv")
+# data = pd.read_csv("/Users/luofanghao/work/USC_lab/isi-II/work/DSBox_project/end2end_sys/dsbox_profiling/dsbox/datapreprocessing/profiler/unit_tests/sources/testData.csv")
 data = pd.read_csv('/nfs1/dsbox-repo/data/datasets/seed_datasets_current/185_baseball/185_baseball_dataset/tables/learningData.csv')
 profiler2 = Profiler(hyperparams=hp)
 result2 = profiler2.produce(inputs=data).value

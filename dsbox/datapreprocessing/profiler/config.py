@@ -6,7 +6,7 @@ VERSION = "1.2.2"
 # TAG_NAME = "{git_commit}".format(git_commit=utils.current_git_commit(os.path.dirname(__file__)), )
 TAG_NAME = ""
 
-REPOSITORY = "https://github.com/usc-isi-i2/dsbox-profiling"
+REPOSITORY = "https://github.com/usc-isi-i2/dsbox_profiling"
 PACAKGE_NAME = "dsbox-dataprofiling"
 
 D3M_PERFORMER_TEAM = 'ISI'
