@@ -93,11 +93,42 @@ class Profiler:
 
         self._PhoneParser = None
 
-    def vectorize_metadata(self, metadata: MetaData_T) -> pd.DataFrame:
+    @staticmethod
+    def flatten_dict(d, prefix: str = ""):
+        out = {}
+        for k, v in d.items():
+            # print(k,"___:____", v)
+            if isinstance(v, set):
+                if len(v) == 0:
+                    continue
+                if len(v) > 1:
+                    print("MULTI SET")
+                out[prefix + k] = list(v)[0]
+            elif isinstance(v, dict):
+                d_c = Profiler.flatten_dict(v, prefix=k + "_")
+                for k_c, v_c in d_c.items():
+                    out[k_c] = v_c
+            elif isinstance(v, list):
+                for d_c in v:
+                    if isinstance(d_c, dict) and 'name' in d_c:
+                        d_c_copy = d_c.copy()
+                        pr = d_c_copy.pop('name')
+                        d_c_t = Profiler.flatten_dict(d_c_copy, prefix=k + f"_{pr}_")
+                        for k_c_c, v_c_c in d_c_t.items():
+                            out[k_c_c] = v_c_c
+            else:
+                out[prefix + k] = v
+        return out
+
+    def vectorize_metadata(self, metadata: MetaData_T) -> typing.Dict[str, pd.Series]:
         col_names = list(metadata.keys())
-        res = pd.DataFrame(None, index=col_names)
-        for col in metadata:
-            pass
+        # res = pd.DataFrame(None, index=col_names)
+        f_c = {}
+        for col in col_names:
+            f_c[col] = pd.Series(Profiler.flatten_dict(metadata[col]))
+
+        return f_c
+
 
     def produce(self, inputs: pd.DataFrame) -> typing.Dict[str, typing.Any]:
         """
@@ -202,18 +233,9 @@ class Profiler:
                 else:
                     old_metadata["structural_type"] = type(10.2)
 
-                # _logger.info(
-                #     "NumAlpha detect_numbers. 'column_index': '%(column_index)d', 'old_metadata': "
-                #     "'%(old_metadata)s', 'new_metadata': '%(new_metadata)s'",
-                #     {
-                #         'column_index': i,
-                #         'old_metadata': dict(inputs.metadata.query((mbase.ALL_ELEMENTS, i))),
-                #         'new_metadata': old_metadata,
-                #     },
-                # )
                 inputs.metadata = inputs.metadata.update((mbase.ALL_ELEMENTS, i), old_metadata)
 
-        return metadata
+        return self.vectorize_metadata(metadata)
 
     def sampling_df(self, inputs):
         # cleaned_df = inputs.dropna()
